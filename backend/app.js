@@ -5,6 +5,12 @@ const bookingsRoutes = require('./routes/bookings');
 const fastifyJwt = require('@fastify/jwt');
 const { jwtSecret } = require('./config');
 
+fastify.register(require('@fastify/cors'), {
+    origin: 'http://localhost:5173', // или ['http://localhost:5173', 'http://127.0.0.1:5173']
+    methods: ['GET', 'POST', 'OPTIONS'],
+    credentials: true
+})
+
 // доступ к бд
 fastify.decorate('db', require('./db'));
 
