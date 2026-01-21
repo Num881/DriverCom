@@ -6,9 +6,12 @@ const fastifyJwt = require('@fastify/jwt');
 const { jwtSecret } = require('./config');
 
 fastify.register(require('@fastify/cors'), {
-    origin: 'http://localhost:5173', // или ['http://localhost:5173', 'http://127.0.0.1:5173']
-    methods: ['GET', 'POST', 'OPTIONS'],
-    credentials: true
+    origin: 'http://localhost:5173',
+    methods: ['GET', 'POST', 'OPTIONS', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Length', 'X-Requested-With'],
+    credentials: true,
+    maxAge: 86400  // кэширование preflight на 24 часа
 })
 
 // доступ к бд

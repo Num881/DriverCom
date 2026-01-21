@@ -28,7 +28,8 @@ export default function Login() {
 
             const data = await res.json()
             localStorage.setItem('token', data.token)
-            navigate('/')  // ← теперь без ошибки
+            localStorage.setItem('role', data.role)  // ← вот эту строку добавить
+            navigate('/')
         } catch (err: unknown) {
             const message = err instanceof Error ? err.message : 'Неизвестная ошибка'
             setError(message)
@@ -36,6 +37,7 @@ export default function Login() {
             setLoading(false)
         }
     }
+
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50">
