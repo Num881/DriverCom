@@ -1,11 +1,14 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { RouterProvider } from 'react-router-dom'
+import { router } from './router'
+import { Toaster } from 'react-hot-toast'
 import './index.css'
-import { router } from './router.tsx'
+
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
         <RouterProvider router={router} />
-    </React.StrictMode>,
-)
+        <Toaster position="top-right" toastOptions={{ duration: 4000 }} />
+    </React.StrictMode>
+);

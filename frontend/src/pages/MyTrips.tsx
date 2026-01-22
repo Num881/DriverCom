@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';  // ← добавляем импорт toast
 
 interface Trip {
     id: number;
@@ -9,6 +10,7 @@ interface Trip {
     car_model: string;
     seats_total: number;
     free_seats: number;
+    price: number;
 }
 
 export default function MyTrips() {
@@ -17,44 +19,60 @@ export default function MyTrips() {
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    useEffect(() => {
-        const fetchMyTrips = async () => {
+    const fetchMyTrips = async () => {
+        const token = localStorage.getItem('token');
+        if (!token) {
+            navigate('/login');
+            return;
+        }
+
+        setLoading(true);
+        setError('');
+
+        try {
+            const res = await fetch('http://localhost:3000/drivers/trips', {
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || 'Ошибка загрузки');
+            }
+
+            const data: Trip[] = await res.json();
+            setTrips(data);
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+            setError(message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const deleteTrip = async (tripId: number) => {
+        if (!confirm('Удалить поездку? Все брони будут отменены.')) return;
+
+        try {
             const token = localStorage.getItem('token');
-            if (!token) {
-                navigate('/login');
-                return;
+            const res = await fetch(`http://localhost:3000/drivers/trips/${tripId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || 'Ошибка удаления');
             }
 
-            // Проверка роли (на всякий случай)
-            const role = localStorage.getItem('role');
-            if (role !== 'driver') {
-                setError('Эта страница доступна только водителям');
-                setLoading(false);
-                return;
-            }
+            toast.success('Поездка удалена');  // ← заменено на toast.success
+            fetchMyTrips();
+        } catch (err: unknown) {
+            const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+            toast.error(message);  // ← заменено на toast.error
+        }
+    };
 
-            try {
-                const res = await fetch('http://localhost:3000/drivers/trips', {
-                    headers: {
-                        Authorization: `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                    },
-                });
-
-                if (!res.ok) {
-                    const errData = await res.json();
-                    throw new Error(errData.error || 'Ошибка загрузки');
-                }
-
-                const data: Trip[] = await res.json();
-                setTrips(data);
-            } catch (err: unknown) {
-                setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
-            } finally {
-                setLoading(false);
-            }
-        };
-
+    useEffect(() => {
         fetchMyTrips();
     }, [navigate]);
 
@@ -63,24 +81,38 @@ export default function MyTrips() {
 
     return (
         <div className="p-6 max-w-7xl mx-auto">
-            <h1 className="text-4xl font-bold mb-10 text-center text-gray-800">Мои поездки</h1>
+            <h1 className="text-4xl font-bold mb-10 text-center">Мои поездки</h1>
 
             {trips.length === 0 ? (
-                <p className="text-center text-gray-600 text-2xl">У вас пока нет созданных поездок</p>
+                <p className="text-center text-gray-600 text-2xl">У вас пока нет поездок</p>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                    {trips.map((trip) => (
-                        <div key={trip.id} className="bg-white p-6 rounded-2xl shadow-lg border border-gray-100">
-                            <h2 className="text-2xl font-bold mb-3 text-gray-800">
+                    {trips.map(trip => (
+                        <div key={trip.id} className="bg-white p-6 rounded-2xl shadow-lg border">
+                            <h2 className="text-2xl font-bold mb-3">
                                 {trip.from_city} → {trip.to_city}
                             </h2>
                             <div className="space-y-2 text-gray-600">
-                                <p>Дата: <span className="font-medium">{trip.date}</span></p>
-                                <p>Машина: <span className="font-medium">{trip.car_model}</span></p>
-                                <p>Мест всего: <span className="font-medium">{trip.seats_total}</span></p>
-                                <p className="text-green-600 font-bold text-lg">
-                                    Свободно: {trip.free_seats}
-                                </p>
+                                <p>Дата: {trip.date}</p>
+                                <p>Машина: {trip.car_model}</p>
+                                <p>Мест всего: {trip.seats_total}</p>
+                                <p className="text-green-600 font-bold">Свободно: {trip.free_seats}</p>
+                                <p>Цена: {trip.price} ₽</p>
+                            </div>
+
+                            <div className="mt-6 flex gap-4">
+                                <button
+                                    onClick={() => navigate(`/edit-trip/${trip.id}`)}
+                                    className="flex-1 py-2 bg-yellow-500 text-white rounded-lg hover:bg-yellow-600"
+                                >
+                                    Редактировать
+                                </button>
+                                <button
+                                    onClick={() => deleteTrip(trip.id)}
+                                    className="flex-1 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+                                >
+                                    Удалить
+                                </button>
                             </div>
                         </div>
                     ))}

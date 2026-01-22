@@ -1,10 +1,5 @@
-const db = require('../db')
+const db = require('../db');
 const { requireRole } = require('../utils/auth');
-const Car = require('../models/car');
-const Route = require('../models/route');
-const Trip = require('../models/trip');
-const Booking = require('../models/booking');
-
 
 async function driverRoutes(fastify) {
     const requireDriver = requireRole('driver');
@@ -16,7 +11,11 @@ async function driverRoutes(fastify) {
             return reply.code(400).send({ error: 'model и seats_total обязательны, seats_total > 0' });
         }
         try {
-            const [id] = await Car.create(request.user.id, model, Number(seats_total));
+            const [id] = await db('cars').insert({
+                driver_id: request.user.id,
+                model,
+                seats_total: Number(seats_total),
+            });
             return { id, model, seats_total };
         } catch (err) {
             fastify.log.error(err);
@@ -26,7 +25,7 @@ async function driverRoutes(fastify) {
 
     fastify.get('/cars', { preHandler: [fastify.authenticate, requireDriver] }, async (request) => {
         try {
-            return await fastify.db('cars')
+            return await db('cars')
                 .where({ driver_id: request.user.id })
                 .select('id', 'model', 'seats_total');
         } catch (err) {
@@ -42,7 +41,11 @@ async function driverRoutes(fastify) {
             return reply.code(400).send({ error: 'from_city, to_city и stops (массив) обязательны' });
         }
         try {
-            const [id] = await Route.create(from_city, to_city, stops);
+            const [id] = await db('routes').insert({
+                from_city,
+                to_city,
+                stops: JSON.stringify(stops),
+            });
             return { id, from_city, to_city, stops };
         } catch (err) {
             fastify.log.error(err);
@@ -52,10 +55,10 @@ async function driverRoutes(fastify) {
 
     fastify.get('/routes', { preHandler: [fastify.authenticate] }, async () => {
         try {
-            const routes = await fastify.db('routes').select('*');
+            const routes = await db('routes').select('*');
             return routes.map(r => ({
                 ...r,
-                stops: JSON.parse(r.stops || '[]')
+                stops: JSON.parse(r.stops || '[]'),
             }));
         } catch (err) {
             return [];
@@ -72,12 +75,12 @@ async function driverRoutes(fastify) {
 
         try {
             // Создаём или находим машину
-            let car = await fastify.db('cars')
+            let car = await db('cars')
                 .where({ driver_id: request.user.id, model: car_model })
                 .first();
 
             if (!car) {
-                const [id] = await fastify.db('cars').insert({
+                const [id] = await db('cars').insert({
                     driver_id: request.user.id,
                     model: car_model,
                     seats_total: Number(seats_total),
@@ -86,14 +89,14 @@ async function driverRoutes(fastify) {
             }
 
             // Создаём маршрут
-            const [routeId] = await fastify.db('routes').insert({
+            const [routeId] = await db('routes').insert({
                 from_city,
                 to_city,
                 stops: JSON.stringify([]),
             });
 
             // Создаём поездку
-            const [tripId] = await fastify.db('trips').insert({
+            const [tripId] = await db('trips').insert({
                 driver_id: request.user.id,
                 car_id: car.id,
                 route_id: routeId,
@@ -111,7 +114,7 @@ async function driverRoutes(fastify) {
     // Личные поездки водителя
     fastify.get('/trips', { preHandler: [fastify.authenticate, requireDriver] }, async (request, reply) => {
         try {
-            const trips = await fastify.db('trips')
+            const trips = await db('trips')
                 .join('cars', 'trips.car_id', 'cars.id')
                 .join('routes', 'trips.route_id', 'routes.id')
                 .where({ 'trips.driver_id': request.user.id })
@@ -126,11 +129,14 @@ async function driverRoutes(fastify) {
 
             const parsedTrips = trips.map(trip => ({
                 ...trip,
-                stops: JSON.parse(trip.stops || '[]')
+                stops: JSON.parse(trip.stops || '[]'),
             }));
 
             for (const trip of parsedTrips) {
-                const { count } = await Booking.countByTrip(trip.id);
+                const { count } = await db('bookings')
+                    .count('* as count')
+                    .where('trip_id', trip.id)
+                    .first();
                 trip.booked_seats = Number(count);
                 trip.free_seats = trip.seats_total - Number(count);
             }
@@ -142,12 +148,139 @@ async function driverRoutes(fastify) {
         }
     });
 
-    // Поиск поездок — доступно всем авторизованным (пассажиры видят всё)
-    fastify.get('/trips/search', { preHandler: [fastify.authenticate] }, async (request, reply) => {
-        const { from_city = '', to_city = '', date } = request.query;
+    // Получение одной поездки (для редактирования)
+    fastify.get('/trips/:id', { preHandler: [fastify.authenticate, requireDriver] }, async (request, reply) => {
+        const tripId = request.params.id;
+        const userId = request.user.id;
 
         try {
-            let query = db('trips')  // ← db, а НЕ fastify.db
+            const trip = await db('trips')
+                .join('cars', 'trips.car_id', 'cars.id')
+                .join('routes', 'trips.route_id', 'routes.id')
+                .where({ 'trips.id': tripId, 'trips.driver_id': userId })
+                .select(
+                    'trips.id',
+                    'routes.from_city',
+                    'routes.to_city',
+                    'trips.date',
+                    'trips.price',
+                    'cars.seats_total',
+                    'cars.model as car_model'
+                )
+                .first();
+
+            if (!trip) {
+                return reply.code(404).send({ error: 'Поездка не найдена или не принадлежит вам' });
+            }
+
+            const { count } = await db('bookings').count('* as count').where('trip_id', tripId).first();
+            trip.booked_seats = Number(count);
+            trip.free_seats = trip.seats_total - Number(count);
+            trip.stops = JSON.parse(trip.stops || '[]');
+
+            return trip;
+        } catch (err) {
+            fastify.log.error(err);
+            return reply.code(500).send({ error: 'Ошибка получения поездки' });
+        }
+    });
+
+    // Редактирование поездки
+    fastify.patch('/trips/:id', { preHandler: [fastify.authenticate, requireDriver] }, async (request, reply) => {
+        const tripId = request.params.id;
+        const userId = request.user.id;
+        const { from_city, to_city, date, price, seats_total, car_model } = request.body;
+
+        try {
+            // Находим поездку
+            const trip = await db('trips').where({ id: tripId, driver_id: userId }).first();
+            if (!trip) return reply.code(404).send({ error: 'Поездка не найдена или не ваша' });
+
+            // 1. Обновляем поля в trips
+            const tripUpdates = {};
+            if (date) tripUpdates.date = date;
+            if (price !== undefined) tripUpdates.price = Number(price);
+
+            if (Object.keys(tripUpdates).length > 0) {
+                await db('trips').where({ id: tripId }).update(tripUpdates);
+            }
+
+            // 2. Если изменилась машина или количество мест
+            if (car_model || seats_total !== undefined) {
+                let car;
+
+                if (car_model) {
+                    // Ищем машину по модели у этого водителя
+                    car = await db('cars')
+                        .where({ driver_id: userId, model: car_model })
+                        .first();
+                } else {
+                    // Если модель не меняется — берём текущую
+                    car = await db('cars').where({ id: trip.car_id }).first();
+                }
+
+                if (!car) {
+                    // Если машины нет — создаём новую
+                    const [newCarId] = await db('cars').insert({
+                        driver_id: userId,
+                        model: car_model || 'Без модели',
+                        seats_total: seats_total !== undefined ? Number(seats_total) : 4,
+                    });
+                    car = { id: newCarId };
+                } else if (seats_total !== undefined) {
+                    // Если модель не меняется, но меняется количество мест — обновляем машину
+                    await db('cars').where({ id: car.id }).update({
+                        seats_total: Number(seats_total),
+                    });
+                }
+
+                // Обновляем связь поездки с машиной
+                await db('trips').where({ id: tripId }).update({ car_id: car.id });
+            }
+
+            // 3. Если изменились города — создаём новый маршрут
+            if (from_city || to_city) {
+                const [routeId] = await db('routes').insert({
+                    from_city: from_city || trip.from_city,
+                    to_city: to_city || trip.to_city,
+                    stops: JSON.stringify([]),
+                });
+
+                await db('trips').where({ id: tripId }).update({ route_id: routeId });
+            }
+
+            return { message: 'Поездка успешно обновлена' };
+        } catch (err) {
+            fastify.log.error(err);
+            return reply.code(500).send({ error: 'Ошибка обновления: ' + err.message });
+        }
+    });
+
+    // Удаление поездки
+    fastify.delete('/trips/:id', { preHandler: [fastify.authenticate, requireDriver] }, async (request, reply) => {
+        const tripId = request.params.id;
+        const userId = request.user.id;
+
+        try {
+            const trip = await db('trips').where({ id: tripId, driver_id: userId }).first();
+            if (!trip) return reply.code(404).send({ error: 'Поездка не найдена или не ваша' });
+
+            await db('bookings').where({ trip_id: tripId }).del();
+            await db('trips').where({ id: tripId }).del();
+
+            return { message: 'Поездка удалена' };
+        } catch (err) {
+            fastify.log.error(err);
+            return reply.code(500).send({ error: 'Ошибка удаления' });
+        }
+    });
+
+    // Поиск поездок — доступно всем авторизованным
+    fastify.get('/trips/search', { preHandler: [fastify.authenticate] }, async (request, reply) => {
+        const { from_city = '', to_city = '', date_from, date_to, price_min, price_max } = request.query;
+
+        try {
+            let query = db('trips')
                 .join('cars', 'trips.car_id', 'cars.id')
                 .join('routes', 'trips.route_id', 'routes.id')
                 .select(
@@ -159,25 +292,19 @@ async function driverRoutes(fastify) {
                     'routes.stops'
                 );
 
-            if (from_city.trim()) {
-                query = query.where('routes.from_city', 'like', `%${from_city.trim()}%`);
-            }
-            if (to_city.trim()) {
-                query = query.where('routes.to_city', 'like', `%${to_city.trim()}%`);
-            }
-            if (date) {
-                query = query.andWhere('trips.date', '>=', date);
-            }
+            if (from_city.trim()) query = query.where('routes.from_city', 'like', `%${from_city.trim()}%`);
+            if (to_city.trim()) query = query.where('routes.to_city', 'like', `%${to_city.trim()}%`);
+
+            if (date_from) query = query.andWhere('trips.date', '>=', date_from);
+            if (date_to) query = query.andWhere('trips.date', '<=', date_to);
+
+            if (price_min) query = query.andWhere('trips.price', '>=', Number(price_min));
+            if (price_max) query = query.andWhere('trips.price', '<=', Number(price_max));
 
             const trips = await query;
 
-            // Парсинг booked_seats и free_seats
             for (const trip of trips) {
-                const { count } = await db('bookings')  // ← db, а НЕ fastify.db
-                    .count('* as count')
-                    .where('trip_id', trip.id)
-                    .first();
-
+                const { count } = await db('bookings').count('* as count').where('trip_id', trip.id).first();
                 trip.booked_seats = Number(count);
                 trip.free_seats = trip.seats_total - Number(count);
                 trip.stops = JSON.parse(trip.stops || '[]');
@@ -185,10 +312,8 @@ async function driverRoutes(fastify) {
 
             return trips;
         } catch (err) {
-            console.error('ERROR IN /trips/search:', err.message);
-            console.error('Stack trace:', err.stack);
             fastify.log.error(err);
-            return reply.code(500).send({ error: 'Ошибка поиска: ' + err.message });
+            return reply.code(500).send({ error: 'Ошибка поиска' });
         }
     });
 }

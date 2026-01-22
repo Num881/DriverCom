@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
 
 interface Booking {
     id: number;
@@ -23,6 +24,9 @@ export default function MyBookings() {
             return;
         }
 
+        setLoading(true);
+        setError('');
+
         try {
             const res = await fetch('http://localhost:3000/bookings/my', {
                 headers: {
@@ -32,22 +36,19 @@ export default function MyBookings() {
             });
 
             if (!res.ok) {
-                const errData = await res.json();
+                const errData = await res.json().catch(() => ({}));
                 throw new Error(errData.error || 'Ошибка загрузки');
             }
 
             const data: Booking[] = await res.json();
             setBookings(data);
         } catch (err: unknown) {
-            setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
+            const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+            setError(message);
         } finally {
             setLoading(false);
         }
     };
-
-    useEffect(() => {
-        fetchMyBookings();
-    }, [navigate]);
 
     const cancelBooking = async (bookingId: number) => {
         if (!confirm('Отменить бронь?')) return;
@@ -63,22 +64,26 @@ export default function MyBookings() {
                 method: 'DELETE',
                 headers: {
                     Authorization: `Bearer ${token}`,
-                    // НЕ добавляй Content-Type — это важно!
                 },
-                body: null,  // ← явно указываем, что тела нет
+                body: null,
             });
 
             if (!res.ok) {
-                const errData = await res.json();
+                const errData = await res.json().catch(() => ({}));
                 throw new Error(errData.error || 'Ошибка отмены');
             }
 
-            alert('Бронь отменена!');
+            toast.success('Бронь успешно отменена!');  // ← заменено на toast.success
             fetchMyBookings(); // обновляем список
         } catch (err: unknown) {
-            alert(err instanceof Error ? err.message : 'Неизвестная ошибка');
+            const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+            toast.error(message);  // ← заменено на toast.error
         }
     };
+
+    useEffect(() => {
+        fetchMyBookings();
+    }, [navigate]);
 
     if (loading) return <div className="text-center p-10 text-xl">Загрузка...</div>;
     if (error) return <div className="text-red-600 text-center p-10 text-xl">{error}</div>;

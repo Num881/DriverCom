@@ -1,45 +1,46 @@
-import {useEffect, useState} from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';  // ← ОБЯЗАТЕЛЬНЫЙ ИМПОРТ
 
 export default function CreateTrip() {
-    const [fromCity, setFromCity] = useState('')
-    const [toCity, setToCity] = useState('')
-    const [date, setDate] = useState('')
-    const [price, setPrice] = useState('')
-    const [seatsTotal, setSeatsTotal] = useState('')
-    const [carModel, setCarModel] = useState('')
-    const [loading, setLoading] = useState(false)
-    const [error, setError] = useState('')
-    const navigate = useNavigate()
+    const [fromCity, setFromCity] = useState('');
+    const [toCity, setToCity] = useState('');
+    const [date, setDate] = useState('');
+    const [price, setPrice] = useState('');
+    const [seatsTotal, setSeatsTotal] = useState('');
+    const [carModel, setCarModel] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
+    const navigate = useNavigate();
 
     useEffect(() => {
-        const role = localStorage.getItem('role')
+        const role = localStorage.getItem('role');
         if (role !== 'driver') {
-            alert('Создавать поездки могут только водители')
-            navigate('/')
+            toast.error('Создавать поездки могут только водители');
+            navigate('/');
         }
-    }, [navigate])
+    }, [navigate]);
 
-    const handleCreate = async (e: React.FormEvent) => {
-        e.preventDefault()
-        setLoading(true)
-        setError('')
+    const handleCreate = async (e: React.FormEvent<HTMLFormElement>) => {
+        e.preventDefault();
+        setLoading(true);
+        setError('');
 
-        // Проверяем на фронте, чтобы не отправлять пустые данные
+        // Проверяем на фронте
         if (!fromCity.trim() || !toCity.trim() || !date || !price || !seatsTotal || !carModel.trim()) {
-            setError('Все поля обязательны')
-            setLoading(false)
-            return
+            setError('Все поля обязательны');
+            setLoading(false);
+            return;
         }
 
-        const token = localStorage.getItem('token')
+        const token = localStorage.getItem('token');
         if (!token) {
-            navigate('/login')
-            return
+            navigate('/login');
+            return;
         }
 
-        try {
-            const res = await fetch('http://localhost:3000/drivers/trips', {
+        toast.promise(
+            fetch('http://localhost:3000/drivers/trips', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -48,29 +49,31 @@ export default function CreateTrip() {
                 body: JSON.stringify({
                     from_city: fromCity.trim(),
                     to_city: toCity.trim(),
-                    date: date, // уже строка в формате YYYY-MM-DD
-                    price: Number(price),        // ← преобразуем в число
-                    seats_total: Number(seatsTotal), // ← преобразуем в число
+                    date,
+                    price: Number(price),
+                    seats_total: Number(seatsTotal),
                     car_model: carModel.trim(),
                 }),
-            })
-
-            if (!res.ok) {
-                const errData = await res.json()
-                throw new Error(errData.error || 'Ошибка создания поездки')
+            }).then(async res => {
+                if (!res.ok) {
+                    const errData = await res.json();
+                    throw new Error(errData.error || 'Ошибка создания поездки');
+                }
+                return res.json();
+            }),
+            {
+                loading: 'Создаём поездку...',
+                success: 'Поездка создана!',
+                error: (err) => err.message || 'Неизвестная ошибка',
             }
-
-            alert('Поездка создана!')
-            navigate('/')
-        } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Неизвестная ошибка'
-            setError(message)
-        } finally {
-            setLoading(false)
-        }
-
-    }
-
+        ).then(() => {
+            navigate('/');
+        }).catch(() => {
+            // toast.error уже показан через promise
+        }).finally(() => {
+            setLoading(false);
+        });
+    };
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gray-50 py-12 px-4">
@@ -169,5 +172,5 @@ export default function CreateTrip() {
                 </p>
             </div>
         </div>
-    )
+    );
 }

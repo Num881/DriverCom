@@ -1,38 +1,39 @@
-import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'  // ← добавь эту строку
-import { Eye, EyeOff, User, Lock } from 'lucide-react'
-import toast from 'react-hot-toast'
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Eye, EyeOff, User, Lock } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 interface AuthFormProps {
-    type: 'login' | 'register'
-    onSubmit: (data: { username: string; password: string; role?: 'driver' | 'passenger' }) => Promise<void>
+    type: 'login' | 'register';
+    onSubmit: (data: { username: string; password: string; role?: 'driver' | 'passenger' }) => Promise<void>;
 }
 
 export function AuthForm({ type, onSubmit }: AuthFormProps) {
-    const [username, setUsername] = useState('')
-    const [password, setPassword] = useState('')
-    const [role, setRole] = useState<'driver' | 'passenger'>('passenger')
-    const [showPassword, setShowPassword] = useState(false)
-    const [loading, setLoading] = useState(false)
-    const navigate = useNavigate()  // ← теперь работает
-    const isRegister = type === 'register'
+    const [username, setUsername] = useState<string>('');
+    const [password, setPassword] = useState<string>('');
+    const [role, setRole] = useState<'driver' | 'passenger'>('passenger');
+    const [showPassword, setShowPassword] = useState<boolean>(false);
+    const [loading, setLoading] = useState<boolean>(false);
+    const navigate = useNavigate();
+    const isRegister = type === 'register';
 
     const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
-        e.preventDefault()
-        setLoading(true)
+        e.preventDefault();
+        setLoading(true);
 
         try {
-            await onSubmit({ username, password, ...(isRegister ? { role } : {}) })
-            toast.success(isRegister ? 'Регистрация прошла успешно! Теперь войдите.' : 'Вход выполнен!')
+            await onSubmit({ username, password, ...(isRegister ? { role } : {}) });
+            toast.success(isRegister ? 'Регистрация прошла успешно! Теперь войдите.' : 'Вход выполнен!');
             if (isRegister) {
-                navigate('/login')  // ← теперь без ошибки
+                navigate('/login');
             }
-        } catch (err: any) {
-            toast.error(err.message || 'Ошибка')
+        } catch (err: unknown) {  // ← unknown вместо any
+            const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+            toast.error(message);
         } finally {
-            setLoading(false)
+            setLoading(false);
         }
-    }
+    };
 
     return (
         <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-gray-50 to-gray-100">
@@ -110,5 +111,5 @@ export function AuthForm({ type, onSubmit }: AuthFormProps) {
                 </p>
             </div>
         </div>
-    )
+    );
 }

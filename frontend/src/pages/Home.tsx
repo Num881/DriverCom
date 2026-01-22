@@ -1,72 +1,83 @@
-import { useEffect, useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';  // ← импорт toast
 
-// Интерфейс для поездки (чтобы TS не ругался на trip.*)
 interface Trip {
-    id: number
-    from_city: string
-    to_city: string
-    date: string
-    car_model: string
-    seats_total: number
-    free_seats: number
+    id: number;
+    from_city: string;
+    to_city: string;
+    date: string;
+    car_model: string;
+    seats_total: number;
+    free_seats: number;
+    price: number;
 }
 
 export default function Home() {
-    const [trips, setTrips] = useState<Trip[]>([])
-    const [loading, setLoading] = useState(true)
-    const [error, setError] = useState('')
-    const navigate = useNavigate()
+    const [trips, setTrips] = useState<Trip[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const navigate = useNavigate();
+
+    // Фильтры
+    const [fromCity, setFromCity] = useState('');
+    const [toCity, setToCity] = useState('');
+    const [dateFrom, setDateFrom] = useState('');
+    const [dateTo, setDateTo] = useState('');
+    const [priceMin, setPriceMin] = useState('');
+    const [priceMax, setPriceMax] = useState('');
 
     const fetchTrips = async () => {
-        const token = localStorage.getItem('token')
+        const token = localStorage.getItem('token');
         if (!token) {
-            navigate('/login')
-            return
+            navigate('/login');
+            return;
         }
 
-        setLoading(true)
-        setError('')
+        setLoading(true);
+        setError('');
 
         try {
-            const res = await fetch('http://localhost:3000/drivers/trips/search?from_city=&to_city=', {
+            const params = new URLSearchParams();
+            if (fromCity.trim()) params.append('from_city', fromCity.trim());
+            if (toCity.trim()) params.append('to_city', toCity.trim());
+            if (dateFrom) params.append('date_from', dateFrom);
+            if (dateTo) params.append('date_to', dateTo);
+            if (priceMin) params.append('price_min', priceMin);
+            if (priceMax) params.append('price_max', priceMax);
+
+            const queryString = params.toString() ? `?${params.toString()}` : '';
+
+            const res = await fetch(`http://localhost:3000/drivers/trips/search${queryString}`, {
                 headers: {
                     Authorization: `Bearer ${token}`,
                     'Content-Type': 'application/json',
                 },
-            })
+            });
 
             if (!res.ok) {
-                const errData = await res.json().catch(() => ({}))
-                const message = errData.error || `Ошибка сервера: ${res.status}`
-                setError(message)
-                if (res.status === 401 || res.status === 403) {
-                    navigate('/login')
-                }
-                return
+                const errData = await res.json().catch(() => ({}));
+                throw new Error(errData.error || `Ошибка сервера: ${res.status}`);
             }
 
-            const data: Trip[] = await res.json()
-            setTrips(data)
+            const data: Trip[] = await res.json();
+            setTrips(data);
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Неизвестная ошибка'
-            setError(message)
-            if (message.includes('401') || message.includes('403')) {
-                navigate('/login')
-            }
+            const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+            setError(message);
         } finally {
-            setLoading(false)
+            setLoading(false);
         }
-    }
+    };
 
     const bookTrip = async (tripId: number) => {
-        if (!confirm('Забронировать место?')) return
+        if (!confirm('Забронировать место?')) return;
 
         try {
-            const token = localStorage.getItem('token')
+            const token = localStorage.getItem('token');
             if (!token) {
-                navigate('/login')
-                return
+                navigate('/login');
+                return;
             }
 
             const res = await fetch('http://localhost:3000/bookings', {
@@ -76,82 +87,182 @@ export default function Home() {
                     Authorization: `Bearer ${token}`,
                 },
                 body: JSON.stringify({ trip_id: tripId }),
-            })
+            });
 
             if (!res.ok) {
-                const errData = await res.json()
-                throw new Error(errData.error || 'Ошибка бронирования')
+                const errData = await res.json();
+                throw new Error(errData.error || 'Ошибка бронирования');
             }
 
-            alert('Место успешно забронировано!')
-            fetchTrips() // обновляем список — free_seats уменьшится
+            toast.success('Место успешно забронировано!');
+            fetchTrips(); // обновляем список
         } catch (err: unknown) {
-            const message = err instanceof Error ? err.message : 'Неизвестная ошибка'
-            alert(message)
+            const message = err instanceof Error ? err.message : 'Неизвестная ошибка';
+            toast.error(message);
         }
-    }
+    };
 
     useEffect(() => {
-        fetchTrips()
-    }, [navigate])
+        fetchTrips();
+    }, [navigate]);
 
-    if (loading) {
-        return <div className="text-center p-10 text-xl">Загрузка поездок...</div>
-    }
+    const applyFilters = () => {
+        fetchTrips();
+    };
 
-    if (error) {
-        return <div className="text-red-600 text-center p-10 text-xl">{error}</div>
-    }
+    const resetFilters = () => {
+        setFromCity('');
+        setToCity('');
+        setDateFrom('');
+        setDateTo('');
+        setPriceMin('');
+        setPriceMax('');
+        fetchTrips();
+    };
 
     return (
-        <div className="p-6 max-w-7xl mx-auto relative">
+        <div className="p-6 max-w-7xl mx-auto">
             {/* Кнопка выхода */}
             <div className="flex justify-end mb-6">
                 <button
                     onClick={() => {
-                        localStorage.removeItem('token')
-                        navigate('/login')
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('role');
+                        navigate('/login');
                     }}
-                    className="px-6 py-2 bg-red-600 text-white font-medium rounded-lg hover:bg-red-700 transition shadow-md"
+                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition"
                 >
                     Выйти
                 </button>
             </div>
-            <div className="flex justify-center gap-6 mb-10">
-                {localStorage.getItem('role') === 'driver' && (
-                    <button
-                        onClick={() => navigate('/my-trips')}
-                        className="px-8 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition"
-                    >
-                        Мои поездки
-                    </button>
-                )}
-                {localStorage.getItem('role') === 'passenger' && (
-                    <button
-                        onClick={() => navigate('/my-bookings')}
-                        className="px-8 py-3 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition"
-                    >
-                        Мои брони
-                    </button>
-                )}
-            </div>
 
             {/* Кнопка создания поездки */}
-            <div className="flex justify-center mb-10">
-                {localStorage.getItem('role') === 'driver' ? (
+            {localStorage.getItem('role') === 'driver' && (
+                <div className="flex justify-center mb-10">
                     <button
                         onClick={() => navigate('/create-trip')}
                         className="px-10 py-4 bg-green-600 text-white font-bold text-lg rounded-full shadow-lg hover:bg-green-700 hover:shadow-xl transition-all duration-300 transform hover:scale-105"
                     >
                         Создать новую поездку
                     </button>
-                ) : null}
+                </div>
+            )}
+
+            <div className="flex justify-center gap-6 mb-10">
+                {localStorage.getItem('role') === 'driver' && (
+                    <button
+                        onClick={() => navigate('/my-trips')}
+                        className="px-8 py-3 bg-indigo-600 text-white font-medium rounded-lg hover:bg-indigo-700 transition shadow-md"
+                    >
+                        Мои поездки
+                    </button>
+                )}
+
+                {localStorage.getItem('role') === 'passenger' && (
+                    <button
+                        onClick={() => navigate('/my-bookings')}
+                        className="px-8 py-3 bg-purple-600 text-white font-medium rounded-lg hover:bg-purple-700 transition shadow-md"
+                    >
+                        Мои брони
+                    </button>
+                )}
             </div>
 
-            <h1 className="text-4xl font-bold mb-10 text-center text-gray-800">Доступные поездки</h1>
+            <h1 className="text-4xl font-bold mb-6 text-center text-gray-800">Доступные поездки</h1>
 
-            {trips.length === 0 ? (
-                <p className="text-center text-gray-600 text-2xl">Поездок пока нет</p>
+            {/* Фильтр */}
+            <div className="bg-white p-6 rounded-xl shadow-md mb-8">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Откуда</label>
+                        <input
+                            type="text"
+                            value={fromCity}
+                            onChange={(e) => setFromCity(e.target.value)}
+                            placeholder="Город отправления"
+                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Куда</label>
+                        <input
+                            type="text"
+                            value={toCity}
+                            onChange={(e) => setToCity(e.target.value)}
+                            placeholder="Город прибытия"
+                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Дата от</label>
+                        <input
+                            type="date"
+                            value={dateFrom}
+                            onChange={(e) => setDateFrom(e.target.value)}
+                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Дата до</label>
+                        <input
+                            type="date"
+                            value={dateTo}
+                            onChange={(e) => setDateTo(e.target.value)}
+                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Цена от</label>
+                        <input
+                            type="number"
+                            value={priceMin}
+                            onChange={(e) => setPriceMin(e.target.value)}
+                            placeholder="от"
+                            min="0"
+                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Цена до</label>
+                        <input
+                            type="number"
+                            value={priceMax}
+                            onChange={(e) => setPriceMax(e.target.value)}
+                            placeholder="до"
+                            min="0"
+                            className="w-full p-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                </div>
+
+                <div className="mt-6 flex justify-center gap-4">
+                    <button
+                        onClick={applyFilters}
+                        className="px-8 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition"
+                    >
+                        Применить фильтр
+                    </button>
+                    <button
+                        onClick={resetFilters}
+                        className="px-8 py-3 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition"
+                    >
+                        Сбросить
+                    </button>
+                </div>
+            </div>
+
+            {/* Список поездок */}
+            {loading ? (
+                <div className="text-center p-10 text-xl">Загрузка поездок...</div>
+            ) : error ? (
+                <div className="text-red-600 text-center p-10 text-xl">{error}</div>
+            ) : trips.length === 0 ? (
+                <p className="text-center text-gray-600 text-2xl">Поездок не найдено</p>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
                     {trips.map((trip) => (
@@ -168,6 +279,9 @@ export default function Home() {
                                 <p>Мест всего: <span className="font-medium">{trip.seats_total}</span></p>
                                 <p className="text-green-600 font-bold text-lg">
                                     Свободно: {trip.free_seats}
+                                </p>
+                                <p className="text-indigo-600 font-bold text-lg">
+                                    Цена: {trip.price} ₽
                                 </p>
                             </div>
                             <button
@@ -186,5 +300,5 @@ export default function Home() {
                 </div>
             )}
         </div>
-    )
+    );
 }
